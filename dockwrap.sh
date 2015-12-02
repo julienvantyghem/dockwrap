@@ -7,6 +7,10 @@ function include_env() {
         echo "You need to init the environment using 'dockwrap init' in your working directory in order to use this feature" && exit -1
     fi
     source ${PWD}/dockwrap-env!(.sample)
+    if [ -z $TAG ] || [ -z $CONTAINER_NAME ]; then
+      echo "You need to export environment variables TAG and CONTAINER_NAME in order to use dockwrap"
+      exit 1
+    fi
 }
 
 function ask_confirmation() {
@@ -17,31 +21,6 @@ function ask_confirmation() {
   then
       exit 1
   fi
-}
-
-function dns_update() {
-  if [ -z "$ZONE" ] || [ -z "$DNS_SERVER" ]; then
-      echo "You need to export two environment variables named ZONE and DNS_SERVER in order to dynamically update a DNS server!" && return;
-  fi
-
-	NSUPDATE=$(which nsupdate)
-	if [ -z "$NSUPDATE" ]; then
-		echo "You need to install bind9 and allow-update on 127.0.0.1 for localhost. in order to user the dynamic DNS feature of this script"
-	else
-	    for DOMAIN in "${SUBDOMAIN[@]}"
-        do
-          nsupdate << EOF
-            server $DNS_SERVER
-            update $1 $DOMAIN.$ZONE $2 A $3
-            send
-EOF
-# the tabs in front of the EOF is problematic, do not indent the previous line!
-            if [ $? -ne 0 ]; then
-              echo "Dynamic DNS update failed, please check that you are allowed to update zone $ZONE on DNS server $DNS_SERVER" 1>&2
-              return $?
-            fi
-        done
-	fi
 }
 
 function d() {
@@ -81,6 +60,13 @@ function build_image() {
 }
 
 ##
+# Gets the last part of a '/' separated string
+##
+function suffix() {
+  echo $1 | awk '{n=split($0,a,"/"); print a[n]}'
+}
+
+##
 # This is a wrapper to enforce a lifecycle for your Dockerized app
 # 1. If a container is not running, spawn a new one based on the image your built
 # 2. If the container is running, do nothing
@@ -91,37 +77,25 @@ function start_container() {
 
   STATE=$(container_state)
   if [[ $STATE == "true" ]]; then
-    echo "A container for this app is already running."
+    echo "Container $CONTAINER_NAME is already running."
     exit 1
   elif [[ $STATE == "false" ]]; then
     echo "There is a stopped container. I'll start it for you."
     DOCKER_OPTS="start $CONTAINER_NAME"
+  elif [[ $CONTAINER_NAME == "abstract" ]]; then
+    echo "Container is abstract, cannot spawn container"
+    exit 1
   else
     echo "Spawning a new container from image $TAG:$VERSION"
     DOCKER_OPTS="run -d -t -i --name $CONTAINER_NAME $ADDITIONAL_OPTS $VOLUME_OPTS $TAG:$VERSION $2"
   fi
 
+  echo $DOCKER_OPTS
   CID=$(d ${DOCKER_OPTS})
   [ $? -ne 0 ] && return;
 
-  IP=$(container_ip_addr)
-  if [ -n "$ZONE" ]  && [ -n "$SUBDOMAIN" ]; then
-      dns_update "delete"
-      dns_update "add" "5" "$IP"
-      if [ $? -ne 0 ]; then
-        echo "Dynamic DNS update failed for $IP."
-      else
-        echo -n "You can now access "
-        for DOMAIN in "${SUBDOMAIN[@]}"
-        do
-            echo -n -e "\e[1m$DOMAIN.$ZONE\e[0m "
-        done
-        echo " => $IP - happy testing!"
-      fi
-  else
-      echo -e "The new container got \e[1m$IP\e[0m"
-      echo
-  fi
+  echo "You can access the container at $(suffix $CONTAINER_NAME).$(suffix $TAG).dev.docker"
+
   if [[ $1 == "debug" ]]; then
     DOCKER_OPTS="attach $CID"
     d ${DOCKER_OPTS}
@@ -143,9 +117,9 @@ function stop_container() {
   STATE=$(container_state)
   if [[ $STATE == "true" ]]; then
     d stop ${CONTAINER_NAME}
-    if [ -n "$ZONE" ]  && [ -n "$SUBDOMAIN" ]; then
-      dns_update "delete"
-    fi
+    echo "Container $CONTAINER_NAME has been stopped"
+  else
+    echo "Container $CONTAINER_NAME was not running"
   fi
 }
 
@@ -232,23 +206,6 @@ VERSION="latest"
 
 # The container name to use
 CONTAINER_NAME="\$APP-\$SERVICE"
-
-## Uncomment if you want to enable dynamic DNS updates
-# The hostname or IP addres of the DNS server you want to send updates to
-# DNS_SERVER="localhost"
-
-# The zone your local bind9 instance has authority for
-# ZONE="yourdomain.tld"
-
-# The subdomain to assign when the DNS zone is updated, the final address will be of the form of \$SUBDOMAIN.\$ZONE
-# SUBDOMAIN=("subdomain-1", "subdomain-2")
-
-# Volume options
-# VOLUME_OPTS="-v path/to/my/source:/var/www"
-
-# Additional docker run options
-# ADDITIONAL_OPTS="--link db:db"
-# ADDITIONAL_OPTS="--env MY_ENV_VAR=/path/"
 
 if [[ "$(basename -- "$0")" == "dockwrap-env" ]]; then
     echo "Don't run $0, use Dockwrap!" >&2
@@ -348,6 +305,8 @@ for var in "$@"
                    clean_untagged_images
                    ;;
     rmi|remove)    remove_image
+                   ;;
+    url)           container_url
                    ;;
     *)             show_help && exit 1
                    ;;
