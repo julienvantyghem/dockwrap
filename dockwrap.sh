@@ -55,8 +55,13 @@ function container_volumes() {
 ##
 function build_image() {
   include_env
-  DOCKER_OPTS="build -t $TAG:$VERSION ."
-  d ${DOCKER_OPTS} $@
+  if [ -z "$1" ]; then
+    VERSION="latest"
+  else
+    VERSION=$1
+  fi
+  DOCKER_OPTS="build -t ${TAG}:${VERSION} ."
+  d ${DOCKER_OPTS}
 }
 
 ##
@@ -74,7 +79,6 @@ function suffix() {
 ##
 function start_container() {
   include_env
-
   STATE=$(container_state)
   if [[ $STATE == "true" ]]; then
     echo "Container $CONTAINER_NAME is already running."
@@ -86,8 +90,8 @@ function start_container() {
     echo "Container is abstract, cannot spawn container"
     exit 1
   else
-    echo "Spawning a new container from image $TAG:$VERSION"
-    DOCKER_OPTS="run -d -t -i --name $CONTAINER_NAME $ADDITIONAL_OPTS $VOLUME_OPTS $TAG:$VERSION $2"
+    echo "Spawning a new container from image $TAG"
+    DOCKER_OPTS="run -d -t -i --name $CONTAINER_NAME $ADDITIONAL_OPTS $VOLUME_OPTS $TAG $2"
   fi
 
   echo $DOCKER_OPTS
@@ -125,13 +129,18 @@ function stop_container() {
 
 function commit_container() {
   include_env
+  if [ -z "$1" ]; then
+    VERSION="latest"
+  else
+    VERSION=$1
+  fi
 	d commit -a ${USER} ${CONTAINER_NAME} ${TAG}:${VERSION}
 }
 
 function remove_container() {
   include_env
   ask_confirmation "remove container $CONTAINER_NAME (with all of its data)?"
-  d rm -v $1 ${CONTAINER_NAME}
+  d rm -v -f ${CONTAINER_NAME}
 }
 
 function remove_image() {
@@ -200,17 +209,9 @@ cat > $PWD/dockwrap-env << EOL
 # This is the Docker tag to use
 APP="$(basename $(dirname $PWD))"
 SERVICE="$(basename $PWD)"
-
 TAG="\$APP/\$SERVICE"
-VERSION="latest"
-
 # The container name to use
 CONTAINER_NAME="\$APP-\$SERVICE"
-
-if [[ "$(basename -- "$0")" == "dockwrap-env" ]]; then
-    echo "Don't run $0, use Dockwrap!" >&2
-    exit 1
-fi
 
 EOL
 }
@@ -227,30 +228,30 @@ cat << EOF
 Usage: $0 [--remote] [OPTION]
 
 This script wraps Docker.io commands to build, tag and run an image / container.
-It also supports dynamically updating a DNS zone when a new container is spawned (requires nsupdate).
 
 All the commands can be executed on a remote docker daemon, when running with --remote and using
 the environment variable DOCKER_REMOTE_DAEMON.
 
 OPTIONS:
-  help		Show this message
+  help          Show this message
 
 CORE FUNCTIONS:
 
-  build		Build the image using the Dockerfile in the current directory and tags it
-  run		Spawn a new container in detached mode, if a container already exists, start it
-  logs		Follow the output of the container's entrypoint process
-  stop		Stop the running container
-  attach	Spawn a new container with a TTY
-  exec		Exec the specified command inside a running container, defaults to /bin/bash
-  commit	Commit the named container and tag it as the latest version of the image
-  rm		Stop the container then remove it
-  rmi		Remove the image
-  info		Get the status of the running container, its IP address, and the DNS domain you can use
+  build         Build the image using the Dockerfile in the current directory and tags it using the provided version, defaults to latest.
+  run|start     Spawn a new container in detached mode, if a container already exists, start it
+  logs          Follow the output of the containers entrypoint process
+  stop          Stop the running container
+  attach|debug  Spawn a new container with a TTY
+  shell         Execute /bin/bash inside a running container
+  exec          Exec the specified command inside a running container, defaults to /bin/bash
+  commit        Commit the named container and tag it useing the provided version, defaults to latest.
+  rm|destroy    Stop the container then remove it
+  rmi|remove    Remove the image
+  info          Get the status of the running container, its IP address, and the DNS domain you can use
 
 HELPER FUNCTIONS:
 
-  tidy		Delete stopped containers images and untagged images to regain volume space
+  tidy|cleanup  Delete stopped containers images and untagged images to regain volume space
 
 EOF
 exit 1
@@ -266,9 +267,10 @@ if [[ $1 == "--remote" ]]; then
   shift
 fi
 
-for var in "$@"
+while [[ $# > 0 ]]
   do
-  case "$1" in
+  key=$1
+  case "$key" in
     # Dockwrap specific options
     init)          init_env
                    ;;
@@ -276,28 +278,34 @@ for var in "$@"
                    ;;
 
     # Docker wrapper options
-    build)         build_image
+    build)         shift
+                   build_image $1
                    ;;
-    run|start)     start_container $1
-                   shift
+    run|start)     start_container
+                   ;;
+    logs)          logtail_container
                    ;;
     stop)          stop_container
                    ;;
-    attach|debug)  start_container $1
-                   stop_container
-                   shift
+    attach|debug)  start_container debug
                    ;;
     shell)         exec_in_container
                    ;;
     exec)          shift
                    exec_in_container $1
-                   shift
                    ;;
-    commit)        echo "Stopping the running container"
+    commit)        echo "Stopping the running container to commit..."
                    stop_container
-                   commit_container
+                   echo "[OK]"
+                   shift
+                   echo "Committing container..."
+                   commit_container $1
+                   echo "[OK]"
+                   echo "Container Restarting the container..."
+                   start_container
+                   echo "[OK]"
                    ;;
-    rm|destroy)    remove_container "-f"
+    rm|destroy)    remove_container
                    ;;
     info)          container_info
                    ;;
@@ -306,10 +314,8 @@ for var in "$@"
                    ;;
     rmi|remove)    remove_image
                    ;;
-    url)           container_url
-                   ;;
-    *)             show_help && exit 1
+    *)             show_help
                    ;;
   esac
-  shift
+  if [[ $# > 0 ]]; then shift; fi
 done
