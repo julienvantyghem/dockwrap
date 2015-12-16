@@ -17,10 +17,7 @@ function ask_confirmation() {
   echo -n -e "Are you sure you want to $1"
   read -p " [y/n] " -n 1 -r
   echo    # (optional) move to a new line
-  if [[ ! $REPLY =~ ^[Yy]$ ]]
-  then
-      exit 1
-  fi
+  if [[ $REPLY =~ ^[Yy]$ ]]; then CONFIRMATION="y"; else CONFIRMATION="n"; fi
 }
 
 function d() {
@@ -140,13 +137,23 @@ function commit_container() {
 function remove_container() {
   include_env
   ask_confirmation "remove container $CONTAINER_NAME (with all of its data)?"
-  d rm -v -f ${CONTAINER_NAME}
+  if [[ $CONFIRMATION == "y" ]]; then
+    d rm -v -f ${CONTAINER_NAME}
+    echo "Done"
+  else
+    echo "Skipped"
+  fi
 }
 
 function remove_image() {
   include_env
   ask_confirmation "remove image $TAG?"
-  d rmi ${TAG}
+  if [[ $CONFIRMATION == "y" ]]; then
+    d rmi ${TAG}
+    echo "Done"
+  else
+    echo "Skipped"
+  fi
 }
 
 function container_info() {
@@ -188,12 +195,22 @@ function exec_in_container() {
 
 function clean_stopped_containers() {
 	ask_confirmation "clean stopped containers? \e[1;31mYou might LOSE IMPORTANT DATA if you did not commit changes\e[0m"
-	d rm $(docker ps -aq --no-trunc -f "status=exited") > /dev/null 2>&1
+  if [[ $CONFIRMATION == "y" ]]; then
+	   d rm $(docker ps -aq --no-trunc -f "status=exited") > /dev/null 2>&1
+     echo "Done"
+  else
+    echo "Skipped"
+  fi
 }
 
 function clean_untagged_images() {
   ask_confirmation "clean untagged images (like intermediate images from aborted builds)?"
-  d rmi $(docker images -f "dangling=true" -q) > /dev/null 2>&1
+  if [[ $CONFIRMATION == "y" ]]; then
+    d rmi $(docker images -f "dangling=true" -q) > /dev/null 2>&1
+    echo "Done"
+  else
+    echo "Skipped"
+  fi
 }
 
 function init_env() {
@@ -246,8 +263,9 @@ CORE FUNCTIONS:
   exec          Exec the specified command inside a running container, defaults to /bin/bash
   commit        Commit the named container and tag it useing the provided version, defaults to latest.
   rm|destroy    Stop the container then remove it
-  rmi|remove    Remove the image
+  tidy|cleanup  Cleans stopped containers and untagged images.
   info          Get the status of the running container, its IP address, and the DNS domain you can use
+  rmi|remove    Remove the image
 
 HELPER FUNCTIONS:
 
