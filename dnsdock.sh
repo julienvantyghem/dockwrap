@@ -85,5 +85,8 @@ function check_skydns_forward_nameserver() {
   fi
 }
 
+if [ "$1" == "local" ]; then
+   nameserver_opt="-nameserver=192.168.41.164:53"
+fi
 
-spawn_container "docker.io/tonistiigi/dnsdock" "dnsdock" "-d -v /var/run/docker.sock:/var/run/docker.sock -p 127.0.0.1:53:53/udp" "-environment=dev"
+spawn_container "docker.io/tonistiigi/dnsdock" "dnsdock" "-d -v /var/run/docker.sock:/var/run/docker.sock -p 127.0.0.1:53:53/udp" "-environment=dev $nameserver_opt"
