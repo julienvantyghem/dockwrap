@@ -42,7 +42,7 @@ function spawn_container() {
     echo "$CONTAINER does not exist"
     if [ -n "$(docker images -q $IMAGE 2> /dev/null)" ]; then
       if propose_service "spawn it from $IMAGE"; then
-        docker run $RUN_OPTIONS $IMAGE $RUN_CMD
+        docker run $RUN_OPTIONS --name $CONTAINER $IMAGE $RUN_CMD
         spawn_container "$IMAGE" "$CONTAINER" "$RUN_OPTIONS" "$RUN_CMD"
       else
         echo "I can't do anything without a running container"
@@ -85,5 +85,5 @@ function check_skydns_forward_nameserver() {
   fi
 }
 
-spawn_container "docker.io/crosbymichael/skydns" "skydns" "-d --name skydns -p 127.0.0.1:53:53/udp --restart=always" "-nameserver 192.168.41.164:53 -domain docker"
-spawn_container "docker.io/crosbymichael/skydock" "skydock" "-d -v /var/run/docker.sock:/docker.sock --name skydock --restart=always" "-ttl 10000000 -environment dev -s /docker.sock -domain docker -name skydns"
+
+spawn_container "docker.io/tonistiigi/dnsdock" "dnsdock" "-d -v /var/run/docker.sock:/var/run/docker.sock -p 127.0.0.1:53:53/udp" "-environment=dev"
