@@ -218,7 +218,7 @@ if [ -f ${PWD}/dockwrap-env!(.sample) ]; then
   echo "dockwrap-env already exists." && return;
 fi
 
-cat > $PWD/dockwrap-env << EOL
+cat > $PWD/dockwrap-env.sample << EOL
 #!/bin/bash
 
 ## Configuration variables
@@ -231,6 +231,8 @@ TAG="\$APP/\$SERVICE"
 CONTAINER_NAME="\$APP-\$SERVICE"
 
 EOL
+
+ln -s dockwrap-env.sample dockwrap-env.sh
 }
 
 function install_script() {
