@@ -256,6 +256,8 @@ OPTIONS:
 
 CORE FUNCTIONS:
 
+  install       Installs dockwrap into /usr/local/bin
+  init          Initializes current directory as dockwrap directory
   build         Build the image using the Dockerfile in the current directory and tags it using the provided version, defaults to latest.
   run|start     Spawn a new container in detached mode, if a container already exists, start it
   logs          Follow the output of the containers entrypoint process
